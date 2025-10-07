@@ -1,0 +1,45 @@
+{
+    "ICECAST_STREAM_URL_ARRAY": [
+        "http://icecast.your-stream.com:8000/stream1.mp3",
+        "http://icecast.your-stream.com:8000/stream2.ogg"
+    ],
+    "SHARED_STATE_DIR": "/data",
+    "ALERT_LOG_FILE": "eas_alerts.log",
+    "DEDICATED_ALERT_LOG_FILE": "EAS2Text.log",
+    "TZ": "America/Chicago",
+    "WATCHED_FIPS": "031055,031153",
+    "RECORDING_DIR": "/data/recordings",
+    "RUST_LOG": "INFO",
+    "APPRISE_CONFIG_PATH": "/app/apprise.yml",
+    "EAS_RELAY_NAME": "ASMARA-EAS",
+    "WEB_SERVER_PORT": "3010",
+    "MONITORING_BIND_PORT": "8080",
+    "MONITORING_BIND_ADDR": "0.0.0.0:8080",
+    "MONITORING_BIND_HOST": "192.168.1.100",
+    "MONITORING_MAX_LOGS": "500",
+    "MONITORING_ACTIVITY_WINDOW_SECS": "45",
+    "USE_REVERSE_PROXY": false,
+    "WS_REVERSE_PROXY_URL": "eas-ws.example.com",
+    "REVERSE_PROXY_URL": "eas.example.com",
+    "DASHBOARD_USERNAME": "your_username_here",
+    "DASHBOARD_PASSWORD": "your_password_here",
+    "SHOULD_RELAY": false,
+    "ICECAST_RELAY": "icecast://source:your_password_here@192.168.1.100:8000/live",
+    "ICECAST_INTRO": "/app/leadin.mp3",
+    "ICECAST_OUTRO": "/app/leadout.mp3",
+    "SHOULD_RELAY_DASDEC": false,
+    "DASDEC_URL": "http://192.168.1.100:5000/send",
+    "ENABLE_FILTERS": false,
+    "FILTERS": [
+        {
+            "name": "RWT Filter",
+            "event_codes": ["RWT"],
+            "action": "ignore"
+        },
+        {
+            "name": "Default Filter",
+            "event_codes": ["*"],
+            "action": "relay"
+        }
+    ]
+}
