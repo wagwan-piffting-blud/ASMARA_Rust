@@ -357,7 +357,7 @@ fn build_discord_embed_body(
         "author": {
             "name": format!("{} - Software ENDEC Logs", station_name.as_str()),
             "icon_url": format!("https://wagspuzzle.space/assets/eas-icons/index.php?code={}&hex=0x{}", img_name, img_color),
-            "url": "https://github.com/wagwan-piffting-blud/ASMARA-Rust-Native"
+            "url": "https://github.com/wagwan-piffting-blud/ASMARA_Rust"
         },
         "fields": [
             {
@@ -404,7 +404,7 @@ fn build_markdown_body(
     raw_header: &str,
 ) -> String {
     format!(
-        "**{} - Software ENDEC Logs**\n\n**{}** has just been received from: {}\n\n**Received:** {}\n\n**EAS Text Data:**\n```\n{}\n```\n\n**EAS Protocol Data:**\n```\n{}\n```\n\nPowered by [Wags' Software ENDEC](https://github.com/wagwan-piffting-blud/ASMARA-Rust-Native)",
+        "**{} - Software ENDEC Logs**\n\n**{}** has just been received from: {}\n\n**Received:** {}\n\n**EAS Text Data:**\n```\n{}\n```\n\n**EAS Protocol Data:**\n```\n{}\n```\n\nPowered by [Wags' Software ENDEC](https://github.com/wagwan-piffting-blud/ASMARA_Rust)",
         station_name.as_str(),
         title,
         originator,
@@ -429,7 +429,7 @@ fn build_html_body(
          <pre>{}</pre>\
          <p><strong>EAS Protocol Data:</strong></p>\
          <pre>{}</pre>\
-         <p>Powered by <a href=\"https://github.com/wagwan-piffting-blud/ASMARA-Rust-Native\">Wags' Software ENDEC</a></p>",
+         <p>Powered by <a href=\"https://github.com/wagwan-piffting-blud/ASMARA_Rust\">Wags' Software ENDEC</a></p>",
         html_escape(&station_name.as_str()),
         html_escape(title),
         html_escape(originator),
@@ -447,7 +447,7 @@ fn build_plain_body(
     raw_header: &str,
 ) -> String {
     format!(
-        "{} - Software ENDEC Logs\n\n{} has just been received from: {}\nReceived: {}\n\nEAS Text Data:\n{}\n\nEAS Protocol Data:\n{}\n\nPowered by Wags' Software ENDEC (https://github.com/wagwan-piffting-blud/ASMARA-Rust-Native)",
+        "{} - Software ENDEC Logs\n\n{} has just been received from: {}\nReceived: {}\n\nEAS Text Data:\n{}\n\nEAS Protocol Data:\n{}\n\nPowered by Wags' Software ENDEC (https://github.com/wagwan-piffting-blud/ASMARA_Rust)",
         station_name.as_str(),
         title,
         originator,
