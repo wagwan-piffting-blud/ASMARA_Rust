@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::filter;
 use crate::monitoring::MonitoringHub;
 use crate::recording::{self, RecordingState};
 use crate::relay::RelayState;
@@ -121,6 +122,7 @@ async fn handle_recording_and_webhook(
     stream_id: String,
     mut nnnn_rx: BroadcastReceiver<()>,
 ) {
+    let event_code = alert.data.event_code.clone();
     let mut recorded_state: Option<(PathBuf, String)> = None;
     let mut join_handle: Option<tokio::task::JoinHandle<Result<()>>> = None;
 
@@ -128,7 +130,7 @@ async fn handle_recording_and_webhook(
     if recorder.is_none() {
         match recording::start_encoding_task(&config, &raw_header, &stream_id) {
             Ok((handle, new_state)) => {
-                info!("Recording started for alert: {}", alert.data.event_code);
+                info!("Recording started for alert: {}", event_code);
                 *recorder = Some(new_state);
                 join_handle = Some(handle);
             }
@@ -146,18 +148,18 @@ async fn handle_recording_and_webhook(
 
         tokio::select! {
             _ = tokio::time::sleep(sleep_duration) => {
-                info!("Recording timer expired for alert: {}", alert.data.event_code);
+                info!("Recording timer expired for alert: {}", event_code);
             }
             res = nnnn_rx.recv() => {
                 if res.is_ok() {
-                    info!("NNNN received, stopping recording for alert: {}", alert.data.event_code);
+                    info!("NNNN received, stopping recording for alert: {}", event_code);
                 } else {
                     warn!("NNNN broadcast channel closed.");
                 }
             }
         }
 
-        info!("Stopping recording for alert: {}", alert.data.event_code);
+        info!("Stopping recording for alert: {}", event_code);
 
         if let Some(RecordingState {
             audio_tx,
@@ -179,15 +181,17 @@ async fn handle_recording_and_webhook(
         }
     }
 
-    let recording_path_for_webhook = recorded_state.as_ref().map(|(path, _)| path.clone());
-    send_alert_webhook(
-        &stream_id,
-        &alert,
-        &dsame_text,
-        &raw_header,
-        recording_path_for_webhook,
-    )
-    .await;
+    if filter::should_log_alert(&event_code) {
+        let recording_path_for_webhook = recorded_state.as_ref().map(|(path, _)| path.clone());
+        send_alert_webhook(
+            &stream_id,
+            &alert,
+            &dsame_text,
+            &raw_header,
+            recording_path_for_webhook,
+        )
+        .await;
+    }
 
     if config.should_relay {
         if let Some((ref recording_path, ref source_stream)) = recorded_state {
@@ -195,7 +199,7 @@ async fn handle_recording_and_webhook(
                 let guard = state.lock().await;
                 guard.cloned_filters()
             };
-            let event_code = alert.data.event_code.clone();
+
             let relay_state = match RelayState::new(config.clone()).await {
                 Ok(state) => state,
                 Err(err) => {

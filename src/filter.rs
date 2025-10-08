@@ -127,6 +127,13 @@ pub fn should_relay_alert(event_code: &str) -> bool {
         .unwrap_or(true)
 }
 
+pub fn should_log_alert(event_code: &str) -> bool {
+    let filters = GLOBAL_FILTERS.read();
+    match_filter(&filters, event_code)
+        .map(|rule| rule.action == FilterAction::Log || rule.action == FilterAction::Relay)
+        .unwrap_or(false)
+}
+
 fn parse_action(action: &str, filter_name: &str) -> FilterAction {
     match action.trim().to_ascii_lowercase().as_str() {
         "ignore" => FilterAction::Ignore,
