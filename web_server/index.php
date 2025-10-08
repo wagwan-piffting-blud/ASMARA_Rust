@@ -35,11 +35,7 @@ if(!empty($_POST["username"]) && !empty($_POST["password"])) {
     }
 }
 
-if(!isset($_SESSION['authed'])) {
-
-    handle_redirect($_SERVER["REQUEST_URI"], $_GET['redirect'] ?? null);
-
-    ?><!DOCTYPE html>
+if(!isset($_SESSION['authed'])) { $_SESSION["redirect"] = $_GET["redirect"] ?? null; ?><!DOCTYPE html>
 <html lang="en">
     <head>
         <meta charset="utf-8" />
@@ -109,11 +105,7 @@ if(!isset($_SESSION['authed'])) {
             </form>
         </div>
     </body>
-</html><?php } else {
-
-    handle_redirect($_SERVER["REQUEST_URI"], $_GET['redirect'] ?? null);
-
-    ?><!DOCTYPE html>
+</html><?php } else { handle_redirect($_SERVER["REQUEST_URI"], $_SESSION['redirect'] ?? null); ?><!DOCTYPE html>
 <html lang="en">
     <head>
         <meta charset="utf-8" />
