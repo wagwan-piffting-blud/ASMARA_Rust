@@ -3,6 +3,7 @@
 function handle_redirect($current_url, $redirect_url = null) {
     if(!empty($redirect_url) && isset($redirect_url)) {
         if($current_url !== $redirect_url) {
+            unset($_SESSION["redirect"]);
             header("Location: " . basename($redirect_url));
             exit();
         }
