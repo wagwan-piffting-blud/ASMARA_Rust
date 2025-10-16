@@ -214,40 +214,52 @@ pub async fn send_alert_webhook(
         }
     }
 
-    for apprise_url_from_config in apprise_urls_from_config_array.iter() {
-        if apprise_url_from_config.trim().contains("discord://") {
-            let payload_json = json!({ "embeds": [discord_embed_body] }).to_string();
+    let discord_urls: Vec<&str> = apprise_urls_from_config_array
+        .iter()
+        .map(|url| url.trim())
+        .filter(|url| url.starts_with("discord://"))
+        .collect();
 
+    if !discord_urls.is_empty() {
+        let client = Client::new();
+        let attachment_bytes = if let Some(path) = attachment_path.as_ref() {
+            match tokio::fs::read(path).await {
+                Ok(bytes) => Some(bytes),
+                Err(err) => {
+                    warn!(
+                        "Failed to read recording attachment at '{}': {}",
+                        path.display(),
+                        err
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        for discord_url in discord_urls {
+            let payload_json = json!({ "embeds": [discord_embed_body.clone()] }).to_string();
             let mut form = multipart::Form::new().text("payload_json", payload_json);
 
-            if let Some(path) = attachment_path.as_ref() {
-                match tokio::fs::read(path).await {
-                    Ok(bytes) => {
-                        let file_name = path
-                            .file_name()
-                            .map(|name| name.to_string_lossy().into_owned())
-                            .filter(|name| !name.is_empty())
-                            .unwrap_or_else(|| "recording.bin".to_string());
+            if let (Some(path), Some(bytes)) = (attachment_path.as_ref(), attachment_bytes.as_ref())
+            {
+                let file_name = path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or_else(|| "recording.bin".to_string());
 
-                        match multipart::Part::bytes(bytes)
-                            .file_name(file_name)
-                            .mime_str("application/octet-stream")
-                        {
-                            Ok(part) => {
-                                form = form.part("file", part);
-                            }
-                            Err(err) => {
-                                warn!(
-                                    "Failed to prepare Discord attachment part for '{}': {}",
-                                    path.display(),
-                                    err
-                                );
-                            }
-                        }
+                match multipart::Part::bytes(bytes.clone())
+                    .file_name(file_name)
+                    .mime_str("application/octet-stream")
+                {
+                    Ok(part) => {
+                        form = form.part("file", part);
                     }
                     Err(err) => {
                         warn!(
-                            "Failed to read recording attachment at '{}': {}",
+                            "Failed to prepare Discord attachment part for '{}': {}",
                             path.display(),
                             err
                         );
@@ -255,19 +267,27 @@ pub async fn send_alert_webhook(
                 }
             }
 
-            let client = Client::new();
-
             let url = format!(
                 "https://discord.com/api/webhooks/{}",
-                apprise_url_from_config.trim_start_matches("discord://")
+                discord_url.trim_start_matches("discord://")
             );
 
-            if let Err(e) = client.post(&url).multipart(form).send().await {
-                warn!("Failed to send Discord webhook: {}", e);
+            match client.post(&url).multipart(form).send().await {
+                Ok(response) if response.status().is_success() => {}
+                Ok(response) => {
+                    warn!(
+                        "Discord webhook responded with status {} for '{}'",
+                        response.status(),
+                        discord_url
+                    );
+                }
+                Err(e) => {
+                    warn!("Failed to send Discord webhook '{}': {}", discord_url, e);
+                }
             }
-
-            return;
         }
+
+        return;
     }
 
     let attempts = [

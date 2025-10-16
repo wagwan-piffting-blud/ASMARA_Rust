@@ -35,6 +35,7 @@ pub struct Config {
     pub reverse_proxy_url: String,
     pub web_server_port: String,
     pub filters: Vec<FilterRule>,
+    pub log_level: String,
 }
 
 impl Config {
@@ -220,6 +221,12 @@ impl Config {
             .unwrap_or("3010")
             .to_string();
 
+        let log_level = config_json
+            .get("RUST_LOG")
+            .and_then(|v| v.as_str())
+            .unwrap_or("INFO")
+            .to_string();
+
         let filters = filter::parse_filters(&config_json);
 
         Ok(Self {
@@ -250,6 +257,7 @@ impl Config {
             reverse_proxy_url,
             web_server_port,
             filters,
+            log_level,
         })
     }
 }

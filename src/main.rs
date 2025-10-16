@@ -5,6 +5,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{broadcast, mpsc, Mutex};
 use tracing::info;
+use tracing::level_filters::LevelFilter;
+use tracing_subscriber::filter as other_filter;
 use tracing_subscriber::fmt::time::ChronoLocal;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
@@ -39,7 +41,14 @@ async fn main() -> Result<()> {
         tracing_appender::rolling::daily(&config.shared_state_dir, &config.alert_log_file);
     let (non_blocking_file, _guard) = tracing_appender::non_blocking(file_appender);
     let env_filter = EnvFilter::from_default_env();
+    let log_level = config
+        .log_level
+        .parse::<LevelFilter>()
+        .unwrap_or(LevelFilter::INFO);
     let monitoring_layer = MonitoringLayer::new(monitoring.clone());
+    let filter = other_filter::Targets::new()
+        .with_default(log_level)
+        .with_target("symphonia", tracing::Level::ERROR);
 
     tracing_subscriber::registry()
         .with(env_filter)
@@ -55,6 +64,7 @@ async fn main() -> Result<()> {
                 .with_timer(timer),
         )
         .with(monitoring_layer)
+        .with(filter)
         .init();
 
     info!("Starting EAS Listener...");

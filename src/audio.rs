@@ -257,71 +257,121 @@ fn process_stream(
     stream_label: &str,
 ) -> Result<()> {
     let runtime = tokio::runtime::Handle::current();
+
     let mut hint = Hint::new();
     if let Some(ct) = content_type {
         if ct.contains("audio/mpeg") {
             hint.with_extension("mp3");
         }
     }
+    let fmt_opts = FormatOptions {
+        enable_gapless: true,
+        ..Default::default()
+    };
     let probed = symphonia::default::get_probe()
-        .format(
-            &hint,
-            mss,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
-        )
+        .format(&hint, mss, &fmt_opts, &MetadataOptions::default())
         .context("Unsupported format")?;
     let mut format = probed.format;
+
     let track = format
         .default_track()
         .ok_or_else(|| anyhow!("No default track found"))?;
+    let mut track_id = track.id;
     let mut decoder = symphonia::default::get_codecs()
         .make(&track.codec_params, &DecoderOptions::default())
         .context("Failed to make decoder")?;
+
     let mut same_receiver = SameReceiverBuilder::new(TARGET_SAMPLE_RATE).build();
     let mut resampler: Option<SincFixedIn<f32>> = None;
+    let mut current_input_rate: Option<u32> = None;
+
     const CHUNK_SIZE: usize = 2048;
     let mut audio_buffer: Vec<f32> = Vec::new();
+
     loop {
         let packet = match format.next_packet() {
-            Ok(packet) => packet,
+            Ok(pkt) => pkt,
+            Err(SymphoniaError::ResetRequired) => {
+                if let Some(new_track) = format.default_track() {
+                    track_id = new_track.id;
+                    decoder = symphonia::default::get_codecs()
+                        .make(&new_track.codec_params, &DecoderOptions::default())
+                        .context("Failed to rebuild decoder after ResetRequired")?;
+                }
+                current_input_rate = None;
+                resampler = None;
+                audio_buffer.clear();
+                continue;
+            }
             Err(SymphoniaError::IoError(_)) => break,
             Err(e) => {
                 error!(stream = %stream_label, "Packet error: {}", e);
                 break;
             }
         };
+
+        if packet.track_id() != track_id {
+            continue;
+        }
+
         match decoder.decode(&packet) {
             Ok(decoded) => {
                 if decoded.frames() == 0 {
                     continue;
                 }
                 let spec = *decoded.spec();
-                let current_resampler = resampler.get_or_insert_with(|| {
+
+                if current_input_rate != Some(spec.rate) {
+                    current_input_rate = Some(spec.rate);
                     use rubato::{
                         SincInterpolationParameters, SincInterpolationType, WindowFunction,
                     };
-                    info!(
-                        stream = %stream_label,
-                        "Stream detected with sample rate {}. Resampling to {}.",
-                        spec.rate,
-                        TARGET_SAMPLE_RATE
-                    );
-                    SincFixedIn::new(
-                        48000.0 / spec.rate as f64,
-                        2.0,
-                        SincInterpolationParameters {
-                            sinc_len: 256,
-                            f_cutoff: 0.95,
-                            interpolation: SincInterpolationType::Linear,
-                            oversampling_factor: 256,
-                            window: WindowFunction::BlackmanHarris2,
-                        },
-                        CHUNK_SIZE,
-                        1,
-                    )
-                    .unwrap()
-                });
+                    if current_input_rate.unwrap() == TARGET_SAMPLE_RATE {
+                        resampler = Some(
+                            SincFixedIn::new(
+                                TARGET_SAMPLE_RATE as f64 / spec.rate as f64,
+                                2.0,
+                                SincInterpolationParameters {
+                                    sinc_len: 256,
+                                    f_cutoff: 0.95,
+                                    interpolation: SincInterpolationType::Linear,
+                                    oversampling_factor: 256,
+                                    window: WindowFunction::BlackmanHarris2,
+                                },
+                                CHUNK_SIZE,
+                                1, // mono
+                            )
+                            .expect("failed to create resampler"),
+                        );
+                    } else {
+                        info!(
+                            stream = %stream_label,
+                            "Stream detected with sample rate {}. Resampling to {}.",
+                            spec.rate,
+                            TARGET_SAMPLE_RATE
+                        );
+                        resampler = Some(
+                            SincFixedIn::new(
+                                TARGET_SAMPLE_RATE as f64 / spec.rate as f64,
+                                2.0,
+                                SincInterpolationParameters {
+                                    sinc_len: 256,
+                                    f_cutoff: 0.95,
+                                    interpolation: SincInterpolationType::Linear,
+                                    oversampling_factor: 256,
+                                    window: WindowFunction::BlackmanHarris2,
+                                },
+                                CHUNK_SIZE,
+                                1, // mono
+                            )
+                            .expect("failed to create resampler"),
+                        );
+                    }
+                }
+                let rs = resampler
+                    .as_mut()
+                    .expect("resampler must be initialized when decoding begins");
+
                 let mut mono_samples = vec![0.0f32; decoded.frames()];
                 let mut sample_buf = SampleBuffer::<f32>::new(decoded.frames() as u64, spec);
                 sample_buf.copy_interleaved_ref(decoded);
@@ -333,20 +383,19 @@ fn process_stream(
                     mono_samples[i] = frame.iter().sum::<f32>() / frame.len() as f32;
                 }
                 audio_buffer.extend_from_slice(&mono_samples);
+
                 while audio_buffer.len() >= CHUNK_SIZE {
                     let chunk_to_process = audio_buffer[..CHUNK_SIZE].to_vec();
-                    let resampled = current_resampler.process(&[chunk_to_process], None)?;
+                    let resampled = rs.process(&[chunk_to_process], None)?;
                     let samples_f32 = resampled[0].clone();
 
-                    let recording_sender = {
+                    if let Some(audio_tx) = {
                         let recorder = recording_state.blocking_lock();
                         recorder
                             .as_ref()
                             .filter(|state| state.source_stream == stream_label)
                             .map(|state| state.audio_tx.clone())
-                    };
-
-                    if let Some(audio_tx) = recording_sender {
+                    } {
                         if let Err(e) = audio_tx.try_send(samples_f32.clone()) {
                             if let TrySendError::Closed(_) = e {
                                 warn!(
@@ -376,21 +425,13 @@ fn process_stream(
                                     std_purge_time,
                                     stream_label.to_string(),
                                 ))) {
-                                    error!(
-                                        stream = %stream_label,
-                                        "Failed to send decoded data: {}",
-                                        e
-                                    );
+                                    error!(stream = %stream_label, "Failed to send decoded data: {}", e);
                                 }
                             }
                             SameMessage::EndOfMessage => {
                                 info!(stream = %stream_label, "NNNN (End of Message) detected");
                                 if let Err(e) = nnnn_tx.send(()) {
-                                    error!(
-                                        stream = %stream_label,
-                                        "Failed to broadcast NNNN signal: {}",
-                                        e
-                                    );
+                                    error!(stream = %stream_label, "Failed to broadcast NNNN signal: {}", e);
                                 }
                             }
                         }
@@ -403,5 +444,6 @@ fn process_stream(
             }
         }
     }
+
     Ok(())
 }
