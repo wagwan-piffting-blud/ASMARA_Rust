@@ -260,11 +260,14 @@ pub async fn run_state_cleanup(
 
 async fn get_eas_details_and_log(config: &Config, raw_header: &str) -> Result<EasAlertData> {
     let header_clone = raw_header.to_string();
+    let timezone = config.timezone.clone().to_string();
     let output = tokio::task::spawn_blocking(move || {
         Command::new("python3")
             .arg("/usr/local/bin/decoder.py")
             .arg("--msg")
             .arg(header_clone)
+            .arg("--tz")
+            .arg(timezone)
             .output()
     })
     .await??;
@@ -274,7 +277,7 @@ async fn get_eas_details_and_log(config: &Config, raw_header: &str) -> Result<Ea
 
         let received_at = Utc::now();
         let local_time = received_at.with_timezone(&config.timezone);
-        let timestamp = local_time.format("%Y-%m-%d%l:%M:%S %p");
+        let timestamp = local_time.format("%Y-%m-%d %l:%M:%S %p");
         let log_line = format!(
             "{}: {} (Received @ {})\n\n",
             raw_header, alert_data.eas_text, timestamp
