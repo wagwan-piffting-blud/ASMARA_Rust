@@ -68,8 +68,6 @@ async fn main() -> Result<()> {
         .init();
 
     info!("Starting EAS Listener...");
-    info!("Loaded config: {:?}", config);
-    info!("Specified timezone: {}", config.timezone);
 
     let app_state = Arc::new(Mutex::new(AppState::new(config.filters.clone())));
     let recording_state = Arc::new(Mutex::new(Option::<RecordingState>::None));
